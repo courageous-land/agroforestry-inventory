@@ -31,6 +31,33 @@ Com a sua ortofoto, é o mesmo comando:
 python inventario.py /caminho/da/minha_ortofoto.tif --especie banana
 ```
 
+### Enquanto o repositório for privado
+
+O `baixar_modelos.py` busca os pesos por URL direta, e asset de release privada não responde a
+URL direta — nem com token, só com sessão de navegador. Então, para quem é da Courageous Land,
+a linha do download muda:
+
+```bash
+gh auth login                                       # uma vez, se ainda não fez
+gh release download modelos-v1.0.0 --dir modelos    # no lugar de baixar_modelos.py
+python baixar_modelos.py                            # não baixa nada: só confere os sha256
+```
+
+A segunda linha traz os quatro `.pth`; a terceira reconhece que já estão no lugar e verifica a
+integridade de cada um, que é o que interessa — download truncado carrega e infere errado sem
+reclamar.
+
+Sem o `gh`, dá para baixar os quatro pesos pela
+[página da release](https://github.com/courageous-land/agroforestry-inventory/releases/tag/modelos-v1.0.0)
+no navegador e apontar a pasta:
+
+```bash
+python baixar_modelos.py --de /caminho/da/pasta/com/os/pesos
+```
+
+Quando o repositório abrir, esta seção sai e o `python baixar_modelos.py` do bloco lá de cima
+passa a funcionar sozinho, sem nenhuma outra mudança.
+
 ### O que sai
 
 | arquivo | o quê |
