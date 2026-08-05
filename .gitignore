@@ -1,0 +1,21 @@
+# pesos dos modelos: 121 MB cada, baixados por baixar_modelos.py
+modelos/*.pth
+modelos/*.parcial
+
+# imagens e resultados do usuário
+*.tif
+*.tiff
+!exemplo/*.tif
+saidas/
+cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# sistema
+.DS_Store
+Thumbs.db

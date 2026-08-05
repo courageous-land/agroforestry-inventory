@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: Inventário agroflorestal por drone
+message: Se este software for útil na sua pesquisa, por favor cite-o.
+type: software
+authors:
+  - given-names: Jeferson
+    family-names: Pereira Martins Silva
+    affiliation: Courageous Land
+license: GPL-3.0
+repository-code: https://github.com/COURAGEOUS-LAND/agroforestry-inventory
+abstract: >-
+  Detecção e contagem de plantas individuais em sistemas agroflorestais a partir
+  de ortofotos de drone RGB. Inclui modelos abertos por espécie, com a acurácia
+  medida e as limitações declaradas para cada um.
+keywords:
+  - agrofloresta
+  - sensoriamento remoto
+  - drone
+  - inventário florestal
+  - visão computacional

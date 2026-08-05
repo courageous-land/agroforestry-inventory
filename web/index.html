@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inventário agroflorestal</title>
+  <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
+  <link rel="stylesheet" href="./estilo.css" />
+</head>
+<body>
+  <div id="mapa"></div>
+
+  <header id="painel">
+    <div class="titulo">
+      <strong id="especie">—</strong>
+      <span id="sitio" class="sub"></span>
+    </div>
+
+    <div class="numero">
+      <span id="contagem">—</span>
+      <span class="rotulo">plantas detectadas</span>
+    </div>
+
+    <div class="controles">
+      <label class="linha">
+        <span>confiança mínima <output id="conf-valor">0,25</output></span>
+        <input id="conf" type="range" min="0" max="0.95" step="0.05" value="0.25" />
+      </label>
+      <label class="linha">
+        <span>opacidade da ortofoto <output id="opac-valor">100</output>%</span>
+        <input id="opac" type="range" min="0" max="1" step="0.05" value="1" />
+      </label>
+      <div class="botoes">
+        <button id="btn-caixas" class="ligado">caixas</button>
+        <button id="btn-centro">centros</button>
+        <button id="btn-exportar">exportar</button>
+      </div>
+    </div>
+
+    <details id="ficha">
+      <summary>acurácia deste modelo</summary>
+      <div id="ficha-corpo"></div>
+    </details>
+  </header>
+
+  <div id="aviso" hidden></div>
+
+  <script src="./vendor/maplibre-gl.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
