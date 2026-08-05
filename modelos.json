@@ -1,6 +1,7 @@
 {
   "versao": "1.0.0",
   "licenca_modelos": "CC-BY-4.0",
+  "base_url": "https://github.com/courageous-land/agroforestry-inventory/releases/download/modelos-v1.0.0",
   "leia_isto_primeiro": [
     "Nenhum destes modelos transfere para outro sítio sem perda. Está medido: um modelo de café",
     "com mAP 0,826 na própria validação encontrou 2 de 198 plantas em janelas retidas a algumas",
