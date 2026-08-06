@@ -1,25 +1,26 @@
-"""Tiles servidos direto do COG, sob demanda, com rio-tiler.
+"""Map tiles cut from the COG on demand.
 
-Dispensa a pirâmide de imagens que normalmente se gera antes de exibir uma
-ortofoto na web — que numa imagem de 1,9 GB custa 608 MB em disco e alguns
-minutos de processamento, e numa de 4 GB passa de 1,3 GB.
+This removes the image pyramid you would normally generate before showing an
+orthophoto on the web - which for a 1.9 GB image costs 608 MB on disk and several
+minutes of processing, and for a 4 GB one goes past 1.3 GB.
 
-Aqui o custo é O(tile) e não O(imagem): o recorte é lido do overview de
-resolução mais próxima, então o zoom baixo — que cobre mais área — é o mais
-barato, não o mais caro. Medido na ortofoto real: 18–37 ms por tile de z16 a
-z23. Numa ortofoto de 4 GB o número é o mesmo, desde que os overviews desçam
-fundo o bastante (é o que o `ingerir.py` garante).
+The cost here is O(tile), not O(image): the crop is read from the overview level
+closest to the requested resolution, so the widest zoom - which covers the most
+ground - is the cheapest, not the most expensive. Measured on a real orthophoto:
+23-67 ms per tile from z16 to z23, and 2 ms once cached. On a 4 GB orthophoto the
+number is the same, as long as the pyramid goes deep enough (which is what
+`ingest.py` guarantees).
 
-Duas armadilhas tratadas aqui:
+Two traps handled here:
 
-  * **Threads.** O servidor é `ThreadingHTTPServer`. Um `DatasetReader` do
-    rasterio não pode ser lido por duas threads ao mesmo tempo — o resultado é
-    tile corrompido ou queda. Cada thread ganha o seu leitor (`threading.local`).
+  * **Threads.** The server is a ThreadingHTTPServer. A rasterio DatasetReader
+    cannot be read by two threads at once - the result is a corrupted tile or a
+    crash. Each thread gets its own reader (`threading.local`).
 
-  * **Esquema de eixo.** Há duas convenções para numerar tiles, XYZ e TMS, que
-    diferem pelo sentido do eixo Y: `y_tms = 2**z - 1 - y_xyz`. Trocar uma pela
-    outra espelha o mapa verticalmente sem dar erro nenhum. Quem chama diz qual
-    quer, e o visualizador pede TMS.
+  * **Axis convention.** There are two ways to number tiles, XYZ and TMS, which
+    differ in the direction of the Y axis: `y_tms = 2**z - 1 - y_xyz`. Swapping
+    one for the other mirrors the map vertically without raising any error. The
+    caller says which one it wants; the viewer asks for TMS.
 """
 
 from __future__ import annotations
@@ -32,144 +33,140 @@ from rasterio.crs import CRS
 from rio_tiler.errors import TileOutsideBounds
 from rio_tiler.io import Reader
 
-# PNG de 256x256 totalmente transparente, devolvido quando o tile cai fora do
-# footprint. Evita 404 em série: o MapLibre pede a caixa inteira mesmo com
-# `bounds` definido, e um 404 por tile polui o console do navegador.
-_VAZIO: bytes | None = None
+_EMPTY: bytes | None = None
 
 
-def png_vazio() -> bytes:
-    """PNG 256x256 RGBA totalmente transparente.
+def empty_png() -> bytes:
+    """A fully transparent 256x256 RGBA PNG.
 
-    Montado com PIL de propósito. A primeira versão usava `ImageData(z, m)` do
-    rio-tiler com a máscara zerada, esperando "0 = transparente" — mas a
-    convenção de máscara mudou entre versões, e o resultado foi um tile **preto
-    opaco**, que pintaria de preto toda a área em volta da ortofoto. Aqui os
-    quatro canais são escritos à mão e não há convenção para errar.
+    Built with PIL on purpose. An earlier version used rio-tiler's `ImageData`
+    with a zeroed mask, expecting "0 means transparent" - but the mask convention
+    changed between versions, and the result was an **opaque black** tile, which
+    would have painted the whole area around the orthophoto black. Here all four
+    channels are written explicitly and there is no convention to get wrong.
     """
-    global _VAZIO
-    if _VAZIO is None:
+    global _EMPTY
+    if _EMPTY is None:
         import io
 
         from PIL import Image
 
         buf = io.BytesIO()
         Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(buf, format="PNG")
-        _VAZIO = buf.getvalue()
-    return _VAZIO
+        _EMPTY = buf.getvalue()
+    return _EMPTY
 
 
-def y_para_xyz(z: int, y: int) -> int:
-    """Converte Y do esquema TMS para XYZ (a operação é a sua própria inversa)."""
+def y_to_xyz(z: int, y: int) -> int:
+    """Convert a TMS Y index to XYZ (the operation is its own inverse)."""
     return (1 << z) - 1 - y
 
 
-class Piramide:
-    """Um COG servido como pirâmide de tiles, com cache em disco.
+class Pyramid:
+    """One COG served as a tile pyramid, with an on-disk cache.
 
-    O cache é opcional mas recomendado: a primeira visita a uma região paga os
-    ~20 ms de leitura, as seguintes leem do disco. A chave inclui tamanho e
-    mtime do raster, então reingerir a ortofoto invalida o cache sozinho.
+    The cache is optional but worth having: the first visit to an area pays the
+    ~20 ms read, later ones read from disk. Its key includes the raster's size and
+    mtime, so re-ingesting the orthophoto invalidates it automatically.
     """
 
-    def __init__(self, caminho: Path, cache_dir: Path | None = None,
-                 reamostragem: str = "cubic") -> None:
-        self.caminho = Path(caminho)
-        if not self.caminho.is_file():
-            raise FileNotFoundError(f"COG não encontrado: {self.caminho}")
+    def __init__(self, path: Path, cache_dir: Path | None = None,
+                 resampling: str = "cubic") -> None:
+        self.path = Path(path)
+        if not self.path.is_file():
+            raise FileNotFoundError(f"COG not found: {self.path}")
 
-        # `cubic` foi escolhido por medição: numa comparação pixel a pixel de 40
-        # tiles entre z18 e z21 contra uma pirâmide gerada pelo método clássico,
-        # foi o que menos diferiu (7,97/255 de diferença média, contra 9,55 do
-        # `nearest`, que é o padrão da biblioteca). O alinhamento é exato em
-        # ambos; o que sobra é diferença de reamostragem, invisível a olho.
-        self.reamostragem = reamostragem
+        # `cubic` was chosen by measurement: comparing 40 tiles between z18 and
+        # z21 against a pyramid generated the classic way, it differed least
+        # (mean difference 7.97/255, against 9.55 for `nearest`, the library
+        # default). Alignment is exact either way; what remains is resampling
+        # difference, invisible to the eye.
+        self.resampling = resampling
         self._local = threading.local()
-        st = self.caminho.stat()
-        chave = f"{self.caminho.resolve()}|{st.st_size}|{int(st.st_mtime)}"
-        self.assinatura = hashlib.sha1(chave.encode("utf-8")).hexdigest()[:16]
-        self.cache_dir = (cache_dir / self.assinatura) if cache_dir else None
 
-        # os limites vêm do próprio COG; o frontend precisa deles para não pedir
-        # tiles do mundo inteiro
-        with Reader(str(self.caminho)) as r:
+        st = self.path.stat()
+        key = f"{self.path.resolve()}|{st.st_size}|{int(st.st_mtime)}"
+        self.signature = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+        self.cache_dir = (cache_dir / self.signature) if cache_dir else None
+
+        # bounds and zoom range come from the file itself; the viewer needs them
+        # or it will request tiles for the whole world
+        with Reader(str(self.path)) as r:
             self.minzoom = int(r.minzoom)
             self.maxzoom = int(r.maxzoom)
             self.bounds_4326 = tuple(
                 round(v, 8) for v in r.get_geographic_bounds(CRS.from_epsg(4326))
             )
 
-    # -- leitor por thread --------------------------------------------------
     @property
-    def _leitor(self) -> Reader:
+    def _reader(self) -> Reader:
         r = getattr(self._local, "reader", None)
         if r is None:
-            r = Reader(str(self.caminho))
+            r = Reader(str(self.path))
             self._local.reader = r
         return r
 
-    def fechar(self) -> None:
+    def close(self) -> None:
         r = getattr(self._local, "reader", None)
         if r is not None:
             r.close()
             self._local.reader = None
 
-    # -- tiles --------------------------------------------------------------
-    def _caminho_cache(self, z: int, x: int, y: int) -> Path | None:
+    def _cache_path(self, z: int, x: int, y: int) -> Path | None:
         if not self.cache_dir:
             return None
         return self.cache_dir / str(z) / str(x) / f"{y}.png"
 
-    def tile(self, z: int, x: int, y: int, esquema: str = "xyz") -> bytes:
-        """PNG do tile. Fora do footprint devolve PNG transparente, não erro."""
-        if esquema == "tms":
-            y = y_para_xyz(z, y)
+    def tile(self, z: int, x: int, y: int, scheme: str = "xyz") -> bytes:
+        """PNG for one tile. Outside the footprint returns a transparent PNG, not an error."""
+        if scheme == "tms":
+            y = y_to_xyz(z, y)
 
-        alvo = self._caminho_cache(z, x, y)
-        if alvo and alvo.is_file():
-            return alvo.read_bytes()
+        cached = self._cache_path(z, x, y)
+        if cached and cached.is_file():
+            return cached.read_bytes()
 
         try:
-            img = self._leitor.tile(x, y, z, resampling_method=self.reamostragem)
+            img = self._reader.tile(x, y, z, resampling_method=self.resampling)
         except TileOutsideBounds:
-            return png_vazio()
+            return empty_png()
 
         png = img.render(img_format="PNG")
-        if alvo:
-            alvo.parent.mkdir(parents=True, exist_ok=True)
-            tmp = alvo.with_suffix(".tmp")
+        if cached:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_suffix(".tmp")
             tmp.write_bytes(png)
-            tmp.replace(alvo)   # atômico: duas threads podem pedir o mesmo tile
+            tmp.replace(cached)   # atomic: two threads may ask for the same tile
         return png
 
     def info(self) -> dict:
         return {
-            "arquivo": self.caminho.name,
+            "file": self.path.name,
             "minzoom": self.minzoom,
             "maxzoom": self.maxzoom,
             "bounds_4326": list(self.bounds_4326),
-            "reamostragem": self.reamostragem,
+            "resampling": self.resampling,
             "cache": str(self.cache_dir) if self.cache_dir else None,
         }
 
 
-class Piramides:
-    """Cache de `Piramide` por caminho de raster.
+class Pyramids:
+    """Cache of `Pyramid` objects by raster path.
 
-    Vários projetos podem apontar para a mesma ortofoto; abrir uma vez só evita
-    reler os metadados e multiplicar leitores.
+    Several views may point at the same orthophoto; opening it once avoids
+    re-reading the metadata and multiplying readers.
     """
 
     def __init__(self, cache_dir: Path | None = None) -> None:
         self.cache_dir = cache_dir
-        self._por_caminho: dict[str, Piramide] = {}
-        self._trava = threading.Lock()
+        self._by_path: dict[str, Pyramid] = {}
+        self._lock = threading.Lock()
 
-    def obter(self, caminho: Path) -> Piramide:
-        chave = str(Path(caminho).resolve())
-        with self._trava:
-            p = self._por_caminho.get(chave)
+    def get(self, path: Path) -> Pyramid:
+        key = str(Path(path).resolve())
+        with self._lock:
+            p = self._by_path.get(key)
             if p is None:
-                p = Piramide(Path(caminho), self.cache_dir)
-                self._por_caminho[chave] = p
+                p = Pyramid(Path(path), self.cache_dir)
+                self._by_path[key] = p
             return p

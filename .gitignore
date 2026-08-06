@@ -1,12 +1,13 @@
-# pesos dos modelos: 121 MB cada, baixados por baixar_modelos.py
-modelos/*.pth
-modelos/*.parcial
+# model weights: 121 MB each, fetched by download_models.py
+models/*.pth
+models/*.partial
 
-# imagens e resultados do usuário
+# user imagery and results
 *.tif
 *.tiff
-!exemplo/*.tif
-saidas/
+!example/*.tif
+outputs/
+static/
 cache/
 
 # Python
@@ -16,6 +17,6 @@ __pycache__/
 venv/
 *.egg-info/
 
-# sistema
+# OS
 .DS_Store
 Thumbs.db

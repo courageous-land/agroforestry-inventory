@@ -1,87 +1,90 @@
-// Visualizador: a ortofoto e as detecções sobre um mapa.
+// Viewer: the orthophoto and the detections on a map.
 //
-// Sem chave de API e sem serviço externo — a biblioteca de mapa está no próprio
-// repositório e os tiles vêm do servidor local, recortados do COG na hora.
+// No API key and no external service - the map library lives in this repository
+// and the tiles come from the local server, cut from the COG on request.
 
 const $ = (id) => document.getElementById(id);
 
-const estado = {
+const state = {
   info: null,
-  deteccoes: null,
-  confMin: 0.25,
-  caixas: true,
-  centros: false,
+  detections: null,
+  minConfidence: 0.25,
+  boxes: true,
+  centres: false,
 };
 
-function aviso(texto, erro = false) {
-  const el = $('aviso');
-  el.textContent = texto;
-  el.hidden = !texto;
-  el.classList.toggle('erro', erro);
-  if (texto && !erro) setTimeout(() => { el.hidden = true; }, 3500);
+function notice(text, isError = false) {
+  const el = $('notice');
+  el.textContent = text;
+  el.hidden = !text;
+  el.classList.toggle('error', isError);
+  if (text && !isError) setTimeout(() => { el.hidden = true; }, 3500);
 }
 
-// --------------------------------------------------------------------- mapa
-function criarMapa(info) {
-  const [oeste, sul, leste, norte] = info.bounds_4326;
+// ---------------------------------------------------------------------- map
+function createMap(info) {
+  const [west, south, east, north] = info.bounds_4326;
 
-  const mapa = new maplibregl.Map({
-    container: 'mapa',
-    // estilo mínimo: sem basemap remoto, o app funciona offline
+  const map = new maplibregl.Map({
+    container: 'map',
+    // minimal style: no remote basemap, so the page works offline
     style: {
       version: 8,
       sources: {},
-      layers: [{ id: 'fundo', type: 'background', paint: { 'background-color': '#0b1220' } }],
+      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#0b1220' } }],
     },
-    bounds: [[oeste, sul], [leste, norte]],
+    bounds: [[west, south], [east, north]],
     fitBoundsOptions: { padding: { top: 40, bottom: 40, left: 340, right: 40 } },
     maxZoom: 25,
     dragRotate: false,
     attributionControl: { compact: true },
   });
-  mapa.touchZoomRotate.disableRotation();
-  mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-  mapa.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+  map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
 
   return new Promise((resolve) => {
-    mapa.on('load', () => {
-      mapa.addSource('orto', {
+    map.on('load', () => {
+      map.addSource('ortho', {
         type: 'raster',
-        tiles: [`${location.origin}/cog/{z}/{x}/{y}.png`],
+        // Two modes, one codebase. With the local server, each tile is cut from
+        // the COG on request. In a static publication the tiles are already on
+        // disk and `tiles_url` points at them - which is what allows hosting the
+        // demo with no server at all.
+        tiles: [info.tiles_url || `${location.origin}/cog/{z}/{x}/{y}.png`],
         tileSize: 256,
-        // o servidor entrega no eixo TMS, e minzoom,
-        // maxzoom e bounds vêm do próprio arquivo — sem eles o mapa pediria
-        // tiles do mundo inteiro
-        scheme: info.esquema || 'tms',
+        // TMS axis convention, and minzoom/maxzoom/bounds read from the file
+        // itself - without them the map would request tiles for the whole world
+        scheme: info.scheme || 'tms',
         minzoom: info.minzoom,
         maxzoom: info.maxzoom,
         bounds: info.bounds_4326,
       });
-      mapa.addLayer({ id: 'orto', type: 'raster', source: 'orto', paint: { 'raster-opacity': 1 } });
-      resolve(mapa);
+      map.addLayer({ id: 'ortho', type: 'raster', source: 'ortho', paint: { 'raster-opacity': 1 } });
+      resolve(map);
     });
   });
 }
 
-// --------------------------------------------------------------- detecções
-function adicionarDeteccoes(mapa, geojson) {
-  mapa.addSource('det', { type: 'geojson', data: geojson });
+// --------------------------------------------------------------- detections
+function addDetections(map, geojson) {
+  map.addSource('det', { type: 'geojson', data: geojson });
 
-  mapa.addLayer({
-    id: 'det-preenchimento',
+  map.addLayer({
+    id: 'det-fill',
     type: 'fill',
     source: 'det',
     paint: { 'fill-color': '#f97316', 'fill-opacity': 0.12 },
   });
-  mapa.addLayer({
-    id: 'det-linha',
+  map.addLayer({
+    id: 'det-line',
     type: 'line',
     source: 'det',
     paint: { 'line-color': '#f97316', 'line-width': 2.5, 'line-opacity': 1 },
   });
-  // um ponto no centro de cada caixa: em zoom baixo a caixa some, o ponto não
-  mapa.addLayer({
-    id: 'det-centro',
+  // a dot at the centre of each box: at wide zoom the box disappears, the dot does not
+  map.addLayer({
+    id: 'det-centre',
     type: 'circle',
     source: 'det',
     layout: { visibility: 'none' },
@@ -93,118 +96,126 @@ function adicionarDeteccoes(mapa, geojson) {
     },
   });
 
-  // clicar numa detecção mostra classe e confiança
-  mapa.on('click', 'det-preenchimento', (e) => {
+  map.on('click', 'det-fill', (e) => {
     const f = e.features && e.features[0];
     if (!f) return;
     new maplibregl.Popup({ closeButton: false })
       .setLngLat(e.lngLat)
       .setHTML(
-        `<strong>${f.properties.classe ?? '—'}</strong><br>` +
-        `confiança ${Number(f.properties.confianca ?? 0).toFixed(2)}`,
+        `<strong>${f.properties.class ?? '—'}</strong><br>` +
+        `confidence ${Number(f.properties.confidence ?? 0).toFixed(2)}`,
       )
-      .addTo(mapa);
+      .addTo(map);
   });
-  mapa.on('mouseenter', 'det-preenchimento', () => { mapa.getCanvas().style.cursor = 'pointer'; });
-  mapa.on('mouseleave', 'det-preenchimento', () => { mapa.getCanvas().style.cursor = ''; });
+  map.on('mouseenter', 'det-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'det-fill', () => { map.getCanvas().style.cursor = ''; });
 }
 
-function aplicarFiltro(mapa) {
-  const filtro = ['>=', ['get', 'confianca'], estado.confMin];
-  for (const id of ['det-preenchimento', 'det-linha', 'det-centro']) {
-    if (mapa.getLayer(id)) mapa.setFilter(id, filtro);
+function applyFilter(map) {
+  const filter = ['>=', ['get', 'confidence'], state.minConfidence];
+  for (const id of ['det-fill', 'det-line', 'det-centre']) {
+    if (map.getLayer(id)) map.setFilter(id, filter);
   }
-  const n = (estado.deteccoes?.features || [])
-    .filter((f) => (f.properties?.confianca ?? 0) >= estado.confMin).length;
-  $('contagem').textContent = n.toLocaleString('pt-BR');
+  const n = (state.detections?.features || [])
+    .filter((f) => (f.properties?.confidence ?? 0) >= state.minConfidence).length;
+  $('total').textContent = n.toLocaleString('en-US');
 }
 
-// ---------------------------------------------------------------- controles
-function instalarControles(mapa) {
+// ----------------------------------------------------------------- controls
+function installControls(map) {
   $('conf').addEventListener('input', (e) => {
-    estado.confMin = Number(e.target.value);
-    $('conf-valor').textContent = estado.confMin.toFixed(2).replace('.', ',');
-    aplicarFiltro(mapa);
+    state.minConfidence = Number(e.target.value);
+    $('conf-value').textContent = state.minConfidence.toFixed(2);
+    applyFilter(map);
   });
 
-  $('opac').addEventListener('input', (e) => {
-    $('opac-valor').textContent = Math.round(Number(e.target.value) * 100);
-    mapa.setPaintProperty('orto', 'raster-opacity', Number(e.target.value));
+  $('opacity').addEventListener('input', (e) => {
+    $('opacity-value').textContent = Math.round(Number(e.target.value) * 100);
+    map.setPaintProperty('ortho', 'raster-opacity', Number(e.target.value));
   });
 
-  const alternar = (botao, camadas, chave) => {
-    botao.addEventListener('click', () => {
-      estado[chave] = !estado[chave];
-      botao.classList.toggle('ligado', estado[chave]);
-      for (const id of camadas) {
-        if (mapa.getLayer(id)) {
-          mapa.setLayoutProperty(id, 'visibility', estado[chave] ? 'visible' : 'none');
+  const toggle = (button, layers, key) => {
+    button.addEventListener('click', () => {
+      state[key] = !state[key];
+      button.classList.toggle('on', state[key]);
+      for (const id of layers) {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(id, 'visibility', state[key] ? 'visible' : 'none');
         }
       }
     });
   };
-  alternar($('btn-caixas'), ['det-preenchimento', 'det-linha'], 'caixas');
-  alternar($('btn-centro'), ['det-centro'], 'centros');
+  toggle($('btn-boxes'), ['det-fill', 'det-line'], 'boxes');
+  toggle($('btn-centres'), ['det-centre'], 'centres');
 
-  $('btn-exportar').addEventListener('click', () => {
-    const feicoes = (estado.deteccoes?.features || [])
-      .filter((f) => (f.properties?.confianca ?? 0) >= estado.confMin);
+  $('btn-export').addEventListener('click', () => {
+    const features = (state.detections?.features || [])
+      .filter((f) => (f.properties?.confidence ?? 0) >= state.minConfidence);
     const blob = new Blob(
-      [JSON.stringify({ type: 'FeatureCollection', features: feicoes }, null, 1)],
+      [JSON.stringify({ type: 'FeatureCollection', features }, null, 1)],
       { type: 'application/geo+json' },
     );
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `deteccoes_conf${estado.confMin.toFixed(2)}.geojson`;
+    a.download = `detections_conf${state.minConfidence.toFixed(2)}.geojson`;
     a.click();
     URL.revokeObjectURL(a.href);
-    aviso(`${feicoes.length} detecções exportadas`);
+    notice(`${features.length} detections exported`);
   });
 }
 
-// ------------------------------------------------------------- ficha modelo
-function mostrarFicha(m) {
+// --------------------------------------------------------------- model card
+function showCard(m) {
   if (!m) {
-    $('ficha').hidden = true;
+    $('card').hidden = true;
     return;
   }
-  $('especie').textContent = m.titulo || m.especie || 'detecções';
-  $('sitio').textContent = m.sitio ? `modelo treinado em ${m.sitio}` : '';
+  $('species').textContent = m.title || m.species || 'detections';
+  $('site').textContent = m.site ? `model trained at ${m.site}` : '';
 
-  const linha = (r, v) => `<div class="par"><span>${r}</span><strong>${v}</strong></div>`;
-  const br = (x) => String(x).replace('.', ',');
-  $('ficha-corpo').innerHTML =
-    linha('precisão', br(m.precisao ?? '—')) +
-    linha('recall', br(m.recall ?? '—')) +
-    linha('erro de posição', m.erro_de_posicao_m != null ? `${br(m.erro_de_posicao_m)} m` : '—') +
-    linha('copa mediana', m.copa_mediana_m != null ? `${br(m.copa_mediana_m)} m` : '—') +
-    (m.onde_falha ? `<p class="falha"><strong>Onde falha:</strong> ${m.onde_falha}</p>` : '') +
-    `<p class="falha">Estes números valem para <em>${m.sitio || 'o sítio de treino'}</em>.
-      Modelos de detecção de copa não transferem entre lugares sem perda — confira
-      uma amostra à mão antes de confiar na contagem.</p>`;
+  const row = (label, value) => `<div class="pair"><span>${label}</span><strong>${value}</strong></div>`;
+  $('card-body').innerHTML =
+    row('precision', m.precision ?? '—') +
+    row('recall', m.recall ?? '—') +
+    row('position error', m.position_error_m != null ? `${m.position_error_m} m` : '—') +
+    row('median crown', m.median_crown_m != null ? `${m.median_crown_m} m` : '—') +
+    (m.where_it_fails ? `<p class="caveat"><strong>Where it fails:</strong> ${m.where_it_fails}</p>` : '') +
+    `<p class="caveat">These numbers hold for <em>${m.site || 'the training site'}</em>.
+      Crown detection models do not transfer between places without loss - check a
+      sample by hand before trusting the count.</p>`;
 }
 
-// -------------------------------------------------------------------- início
-(async function iniciar() {
+// -------------------------------------------------------------------- start
+// With a server, the data comes from the API. In a static publication it is
+// files next to the page. Try the API and fall back to the files.
+async function load(apiRoute, file) {
   try {
-    const info = await (await fetch('/api/info')).json();
-    estado.info = info;
-    const mapa = await criarMapa(info);
+    const r = await fetch(apiRoute);
+    if (r.ok) return await r.json();
+  } catch { /* no server: fall through to the file */ }
+  return (await fetch(file)).json();
+}
 
-    const geojson = await (await fetch('/api/deteccoes')).json();
-    estado.deteccoes = geojson;
+(async function start() {
+  try {
+    const info = await load('/api/info', './info.json');
+    state.info = info;
+    const map = await createMap(info);
+
+    const geojson = await load('/api/detections', './detections.geojson');
+    state.detections = geojson;
     if ((geojson.features || []).length) {
-      adicionarDeteccoes(mapa, geojson);
+      addDetections(map, geojson);
     } else {
-      aviso('Nenhuma detecção para mostrar — só a ortofoto.', true);
+      notice('No detections to show - orthophoto only.', true);
     }
 
-    mostrarFicha(info.modelo);
-    instalarControles(mapa);
-    aplicarFiltro(mapa);
-    window.__inventario = { mapa, estado };
+    showCard(info.model);
+    installControls(map);
+    applyFilter(map);
+    window.__inventory = { map, state };
   } catch (e) {
     console.error(e);
-    aviso(`Falha ao iniciar: ${e.message}`, true);
+    notice(`Failed to start: ${e.message}`, true);
   }
 })();

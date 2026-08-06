@@ -1,194 +1,157 @@
-# Inventário agroflorestal por drone
+# Agroforestry inventory from drone imagery
 
-Conta e localiza as plantas de um sistema agroflorestal a partir de uma ortofoto de drone.
-Entra a imagem, sai um mapa com cada planta marcada e um arquivo geográfico para usar no seu SIG.
+Counts and locates individual plants in an agroforestry system from a drone
+orthophoto. An image goes in; a map with every plant marked and a geographic file
+for your GIS come out.
 
-![Mapa com a ortofoto e as detecções](docs/mapa.png)
+![Map with the orthophoto and the detections](docs/map.png)
 
-Roda **na sua máquina**, sem GPU, sem conta em serviço nenhum e sem enviar a sua imagem para
-lugar algum. Depois de baixar os modelos, funciona sem internet.
+Runs on your own machine, without a GPU, without an account anywhere, and without
+sending your imagery outside. Once the models are downloaded it works offline.
 
----
+## Try it without installing anything
 
-## Como usar
+**[Open in Colab](https://colab.research.google.com/github/COURAGEOUS-LAND/agroforestry-inventory/blob/main/agroforestry_inventory_colab.ipynb)**
+— pick a species, upload an orthophoto, get the map and the files. Free GPU, no
+setup. Run it on the bundled example first to see what the output looks like.
+
+There is also a [live demo](https://huggingface.co/spaces/JefersonPMS/agroforestry-inventory-demo)
+showing a finished result.
+
+## Run it locally
 
 ```bash
 git clone https://github.com/COURAGEOUS-LAND/agroforestry-inventory
 cd agroforestry-inventory
 
 pip install -r requirements.txt
-python baixar_modelos.py
+python download_models.py
 
-python inventario.py exemplo/cafe_raizes.tif --especie cafe
+python inventory.py example/coffee_raizes.tif --species coffee
 ```
 
-O navegador abre sozinho com o mapa. A ortofoto de exemplo está no repositório, então dá para
-ver funcionando antes de usar a sua própria imagem.
-
-Com a sua ortofoto, é o mesmo comando:
+The browser opens with the map. Use your own image the same way:
 
 ```bash
-python inventario.py /caminho/da/minha_ortofoto.tif --especie banana
+python inventory.py /path/to/my_orthophoto.tif --species banana
 ```
 
-### Enquanto o repositório for privado
+Needs Python 3.11+. The orthophoto must be a georeferenced GeoTIFF with at least
+three bands (RGB).
 
-O `baixar_modelos.py` busca os pesos por URL direta, e asset de release privada não responde a
-URL direta — nem com token, só com sessão de navegador. Então, para quem é da Courageous Land,
-a linha do download muda:
+### Output
 
-```bash
-gh auth login                                       # uma vez, se ainda não fez
-gh release download modelos-v1.0.0 --dir modelos    # no lugar de baixar_modelos.py
-python baixar_modelos.py                            # não baixa nada: só confere os sha256
-```
-
-A segunda linha traz os quatro `.pth`; a terceira reconhece que já estão no lugar e verifica a
-integridade de cada um, que é o que interessa — download truncado carrega e infere errado sem
-reclamar.
-
-Sem o `gh`, dá para baixar os quatro pesos pela
-[página da release](https://github.com/courageous-land/agroforestry-inventory/releases/tag/modelos-v1.0.0)
-no navegador e apontar a pasta:
-
-```bash
-python baixar_modelos.py --de /caminho/da/pasta/com/os/pesos
-```
-
-Quando o repositório abrir, esta seção sai e o `python baixar_modelos.py` do bloco lá de cima
-passa a funcionar sozinho, sem nenhuma outra mudança.
-
-### O que sai
-
-| arquivo | o quê |
+| file | contents |
 |---|---|
-| `saidas/<nome>_<especie>_caixas.geojson` | um polígono por planta, com a confiança |
-| `saidas/<nome>_<especie>_centroides.geojson` | o ponto central de cada planta |
-| `saidas/<nome>_<especie>.csv` | a mesma coisa em tabela, com latitude e longitude |
+| `outputs/<name>_<species>_boxes.geojson` | one polygon per plant, with its confidence |
+| `outputs/<name>_<species>_centroids.geojson` | the centre point of each plant |
+| `outputs/<name>_<species>.csv` | the same as a table, with latitude and longitude |
 
-Tudo em EPSG:4326, pronto para abrir no QGIS.
+All in EPSG:4326, ready for QGIS.
 
----
+## Models
 
-## Modelos disponíveis
+One model per species. The figures below were measured by comparing detections
+against plants marked by hand, in areas the model never saw during training.
 
-Cada modelo detecta **uma** espécie. Os números abaixo foram medidos comparando as detecções com
-plantas marcadas à mão, em áreas que o modelo nunca viu durante o treino.
-
-| espécie | `--especie` | precisão | recall | erro de posição | copa mediana |
+| species | `--species` | precision | recall | position error | median crown |
 |---|---|---|---|---|---|
-| Pitaia | `pitaia` | 0,89 | 0,98 | 7 cm | 0,97 m |
-| Café arábica | `cafe` | 0,72 | 0,91 | 3 cm | 0,36 m |
-| Abacate | `abacate` | 0,69 | 0,94 | 12 cm | 1,52 m |
-| Banana | `banana` | 0,59 | 0,93 | 18 cm | 3,11 m |
+| Pitaya | `pitaya` | 0.89 | 0.98 | 7 cm | 0.97 m |
+| Arabica coffee | `coffee` | 0.72 | 0.91 | 3 cm | 0.36 m |
+| Avocado | `avocado` | 0.69 | 0.94 | 12 cm | 1.52 m |
+| Banana | `banana` | 0.59 | 0.93 | 18 cm | 3.11 m |
 
-**Precisão** é quantas das plantas apontadas são reais. **Recall** é quantas das plantas reais
-foram encontradas. Os dois importam, e por motivos diferentes: precisão baixa infla a contagem,
-recall baixo esconde plantas.
+**Precision** is how many of the reported plants are real. **Recall** is how many
+of the real plants were found. Both matter, for different reasons: low precision
+inflates the count, low recall hides plants.
 
-Cada modelo traz também um campo `onde_falha` em [`modelos.json`](modelos.json), dizendo em que
-situação ele erra. Vale ler antes de usar.
+Weights and full model cards: [huggingface.co/JefersonPMS/agroforestry-inventory](https://huggingface.co/JefersonPMS/agroforestry-inventory)
 
----
+## Read this before trusting a number
 
-## Leia isto antes de confiar num número
+**These models do not transfer from one place to another without loss.** This is
+measured, and the failure is silent.
 
-**Estes modelos não transferem de um lugar para outro sem perda.** Não é uma ressalva de praxe —
-está medido, e a falha é silenciosa.
+One of our coffee models scored well on its own validation set. Applied to
+held-out areas of the **same orthophoto**, a few hundred metres from where it was
+trained, it found **2 of 198** plants. Its precision stayed at 1.00: the two it
+found were correct. It invented nothing — it went blind, and **nothing in the
+output said so**.
 
-Um dos nossos modelos de café obteve pontuação alta na própria validação. Aplicado a áreas
-retidas da **mesma ortofoto**, a algumas centenas de metros de onde foi treinado, encontrou
-**2 de 198** plantas. E a precisão dele continuou em 1,00: as duas que achou estavam certas.
-Ou seja, ele não inventou nada — ficou cego, e **nada na saída avisava**.
+The reason is that an agroforestry system varies a lot: flight altitude, time of
+day, season, plant age, soil, shading and spacing change how a crown looks more
+than one would expect.
 
-O motivo é que uma agrofloresta muda muito: altura de voo, hora do dia, estação, idade da planta,
-solo, sombreamento e espaçamento mudam a aparência da copa mais do que se imagina.
+So, when you run it on your imagery:
 
-Então, ao rodar sobre a sua imagem:
+1. Open the map and **look**. If the boxes do not sit on the plants, the model
+   does not work there.
+2. Check a sample by hand. Take a small area, count the plants, compare.
+3. Move the confidence slider and watch the count. If it collapses with a small
+   increase, the detections are fragile.
 
-1. Abra o mapa e **olhe**. Se as caixas não caem sobre as plantas, o modelo não serve ali.
-2. Confira uma amostra à mão. Escolha uma área pequena, conte as plantas, compare com o número.
-3. Ajuste a confiança mínima no painel e veja como a contagem se move. Se ela desaba com um
-   pequeno aumento, as detecções estão frágeis.
+Each model also carries a `where_it_fails` field in
+[`models.json`](models.json), saying what it gets wrong. Worth reading first.
 
-Preferimos dizer isso na primeira página a deixar você descobrir depois.
+## How it works
 
----
-
-## Como funciona
-
-Três etapas, que o `inventario.py` encadeia e que também rodam sozinhas.
+Three stages, chained by `inventory.py` and also runnable on their own.
 
 ```
-ortofoto.tif ──▶ ingerir.py ──▶ inferir.py ──▶ servidor.py ──▶ mapa no navegador
-                    COG          GeoJSON         tiles + página
+orthophoto.tif ──▶ ingest.py ──▶ detect.py ──▶ server.py ──▶ map in the browser
+                      COG         GeoJSON      tiles + page
 ```
 
-**1. `ingerir.py` — preparar a imagem.** Converte a ortofoto para *Cloud Optimized GeoTIFF*:
-organizada em blocos e com uma pirâmide interna de resoluções. Sem isso, ler um pedaço da imagem
-obriga o programa a percorrer o arquivo inteiro. A profundidade da pirâmide é calculada pelo
-tamanho da imagem, e não fixada, para continuar funcionando quando a ortofoto for de 4 GB.
+**`ingest.py`** converts the orthophoto to a Cloud Optimized GeoTIFF, so that
+reading a piece of the image does not mean walking the whole file. Pyramid depth
+is computed from the image size rather than fixed, so it keeps working at 4 GB.
 
-**2. `inferir.py` — encontrar as plantas.** A ortofoto é grande demais para caber num modelo de
-visão, então é percorrida em recortes com sobreposição. Cada caixa devolvida em pixel vira
-coordenada geográfica pela transformação afim do raster. Como os recortes se sobrepõem, a mesma
-planta é detectada mais de uma vez perto das bordas; a deduplicação junta essas repetições
-mantendo a de maior confiança.
+**`detect.py`** walks the orthophoto in overlapping tiles, converts each predicted
+box to geographic coordinates through the raster transform, and de-duplicates the
+plants caught in more than one tile.
 
-**3. `servidor.py` — mostrar.** Serve a página e recorta cada tile do mapa direto do COG, na hora.
-Isso dispensa gerar uma pirâmide de imagens em disco, que numa ortofoto de 1,9 GB custaria mais de
-600 MB e vários minutos. Medido: 23 a 67 ms por tile novo, 2 ms quando já está em cache.
+**`server.py`** serves the page and cuts every map tile from the COG on request,
+which avoids generating an image pyramid on disk — over 600 MB for a 1.9 GB
+orthophoto. Measured at 23–67 ms per new tile, 2 ms cached.
 
-### Desempenho
+### Performance
 
-Medido numa ortofoto de 1,9 GB (27.426 × 21.800 px):
+Measured on a 1.9 GB orthophoto (27,426 × 21,800 px):
 
-| | com GPU (RTX 4070) | só CPU |
+| | GPU (RTX 4070) | CPU only |
 |---|---|---|
-| por recorte | 17 ms | 100 ms |
-| ortofoto inteira | ~1 min | **~4 min** |
-| ortofoto de 4 GB | ~2 min | ~9 min |
+| per tile | 17 ms | 100 ms |
+| whole orthophoto | ~1 min | **~4 min** |
+| a 4 GB orthophoto | ~2 min | ~9 min |
 
-A GPU ajuda, mas não é requisito. O projeto foi desenhado para rodar em máquina comum.
+A GPU helps but is not required.
 
----
-
-## Ajustes
+### Options
 
 ```bash
-python inventario.py imagem.tif --especie cafe \
-    --confianca 0.35 \      # detecção mínima aceita (padrão 0,25)
-    --dedup-m 0.4 \         # distância abaixo da qual duas detecções são a mesma planta
-    --refazer               # ignora resultados anteriores
+python inventory.py image.tif --species coffee \
+    --confidence 0.35 \   # minimum detection score (default 0.25)
+    --dedup-m 0.4 \       # distance below which two detections are one plant
+    --redo                # ignore previous results
 ```
 
-Sobre o `--dedup-m`: o padrão vem do manifesto, por espécie. Se for mexer, a regra prática é
-**metade da menor distância real entre duas plantas** no seu plantio. Valor alto demais funde
-plantas vizinhas numa só e subestima a contagem.
+`--dedup-m` defaults to the value recommended per species in the manifest. If you
+change it, the rule of thumb is **half the smallest real spacing between plants**.
+Too large a value merges neighbours and undercounts.
 
----
+## Documentation
 
-## Requisitos
+- [`docs/architecture_stack.png`](docs/architecture_stack.png) — the full stack:
+  what runs on the user's machine, what stays on ours, what is still to be built
+- [`docs/data_flow.png`](docs/data_flow.png) — where the data goes, and the line
+  between what never leaves the machine and what is published
+- [`docs/UNICEF_Template2_Product_Requirements.docx`](docs/UNICEF_Template2_Product_Requirements.docx)
+  — full technical description of the solution, its measured limitations and the
+  alternatives that were tested and rejected
 
-Python 3.11 ou superior. Tudo instala por `pip`, sem precisar compilar GDAL nem instalar QGIS.
+## Licence
 
-A ortofoto precisa ter pelo menos três bandas (RGB) e estar georreferenciada. Os modelos foram
-treinados com imagens de cerca de 1,7 cm por pixel; resoluções muito diferentes degradam o
-resultado.
+Code under [GPL-3.0](LICENSE). Models under CC-BY-4.0.
 
----
-
-## Documentação
-
-| | |
-|---|---|
-| [`docs/diagrama_stack.png`](docs/diagrama_stack.png) | o stack completo: o que roda na máquina do usuário, o que fica do nosso lado e o que ainda será construído |
-| [`docs/diagrama_fluxo_dados.png`](docs/diagrama_fluxo_dados.png) | o caminho do dado, e a fronteira entre o que nunca sai da máquina e o que é publicado |
-| [`docs/Template2_Product_Requirements_EN.docx`](docs/Template2_Product_Requirements_EN.docx) | descrição técnica completa da solução, submetida ao UNICEF Innovation Fund |
-| [`docs/Template2_Requisitos_do_Produto_PT.docx`](docs/Template2_Requisitos_do_Produto_PT.docx) | o mesmo documento em português |
-
----
-
-## Licença
-
-Código sob [GPL-3.0](LICENSE). Modelos sob CC-BY-4.0.
+Developed by Courageous Land. If this is useful in your research, citation
+details are in [`CITATION.cff`](CITATION.cff).

@@ -1,49 +1,49 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Inventário agroflorestal</title>
+  <title>Agroforestry inventory</title>
   <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
-  <link rel="stylesheet" href="./estilo.css" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div id="mapa"></div>
+  <div id="map"></div>
 
-  <header id="painel">
-    <div class="titulo">
-      <strong id="especie">—</strong>
-      <span id="sitio" class="sub"></span>
+  <header id="panel">
+    <div class="title">
+      <strong id="species">—</strong>
+      <span id="site" class="sub"></span>
     </div>
 
-    <div class="numero">
-      <span id="contagem">—</span>
-      <span class="rotulo">plantas detectadas</span>
+    <div class="count">
+      <span id="total">—</span>
+      <span class="label">plants detected</span>
     </div>
 
-    <div class="controles">
-      <label class="linha">
-        <span>confiança mínima <output id="conf-valor">0,25</output></span>
+    <div class="controls">
+      <label class="row">
+        <span>minimum confidence <output id="conf-value">0.25</output></span>
         <input id="conf" type="range" min="0" max="0.95" step="0.05" value="0.25" />
       </label>
-      <label class="linha">
-        <span>opacidade da ortofoto <output id="opac-valor">100</output>%</span>
-        <input id="opac" type="range" min="0" max="1" step="0.05" value="1" />
+      <label class="row">
+        <span>orthophoto opacity <output id="opacity-value">100</output>%</span>
+        <input id="opacity" type="range" min="0" max="1" step="0.05" value="1" />
       </label>
-      <div class="botoes">
-        <button id="btn-caixas" class="ligado">caixas</button>
-        <button id="btn-centro">centros</button>
-        <button id="btn-exportar">exportar</button>
+      <div class="buttons">
+        <button id="btn-boxes" class="on">boxes</button>
+        <button id="btn-centres">centres</button>
+        <button id="btn-export">export</button>
       </div>
     </div>
 
-    <details id="ficha">
-      <summary>acurácia deste modelo</summary>
-      <div id="ficha-corpo"></div>
+    <details id="card">
+      <summary>accuracy of this model</summary>
+      <div id="card-body"></div>
     </details>
   </header>
 
-  <div id="aviso" hidden></div>
+  <div id="notice" hidden></div>
 
   <script src="./vendor/maplibre-gl.js"></script>
   <script src="./app.js"></script>
