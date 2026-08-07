@@ -4,7 +4,7 @@ Counts and locates individual plants in an agroforestry system from a drone
 orthophoto. An image goes in; a map with every plant marked and a geographic file
 for your GIS come out.
 
-![Map with the orthophoto and the detections](docs/map.png)
+![Map with the orthophoto and the detections](map.png)
 
 Runs on your own machine, without a GPU, without an account anywhere, and without
 sending your imagery outside. Once the models are downloaded it works offline.
@@ -14,9 +14,6 @@ sending your imagery outside. Once the models are downloaded it works offline.
 **[Open in Colab](https://colab.research.google.com/github/COURAGEOUS-LAND/agroforestry-inventory/blob/main/agroforestry_inventory_colab.ipynb)**
 — pick a species, upload an orthophoto, get the map and the files. Free GPU, no
 setup. Run it on the bundled example first to see what the output looks like.
-
-There is also a [live demo](https://huggingface.co/spaces/JefersonPMS/agroforestry-inventory-demo)
-showing a finished result.
 
 ## Run it locally
 
@@ -67,31 +64,23 @@ inflates the count, low recall hides plants.
 
 Weights and full model cards: [huggingface.co/JefersonPMS/agroforestry-inventory](https://huggingface.co/JefersonPMS/agroforestry-inventory)
 
-## Read this before trusting a number
+## Before trusting a number
 
-**These models do not transfer from one place to another without loss.** This is
-measured, and the failure is silent.
+**A model trained in one place loses accuracy in another, and the failure is
+silent.** Flight altitude, time of day, season, plant age, soil, shading and
+spacing all change how a crown looks. When a model does not suit your imagery, the
+count still comes out confident — nothing in the output says otherwise.
 
-One of our coffee models scored well on its own validation set. Applied to
-held-out areas of the **same orthophoto**, a few hundred metres from where it was
-trained, it found **2 of 198** plants. Its precision stayed at 1.00: the two it
-found were correct. It invented nothing — it went blind, and **nothing in the
-output said so**.
-
-The reason is that an agroforestry system varies a lot: flight altitude, time of
-day, season, plant age, soil, shading and spacing change how a crown looks more
-than one would expect.
-
-So, when you run it on your imagery:
+So, on your own imagery:
 
 1. Open the map and **look**. If the boxes do not sit on the plants, the model
    does not work there.
-2. Check a sample by hand. Take a small area, count the plants, compare.
-3. Move the confidence slider and watch the count. If it collapses with a small
-   increase, the detections are fragile.
+2. Count a small area by hand and compare.
+3. Move the confidence slider. If the count collapses with a small increase, the
+   detections are fragile.
 
-Each model also carries a `where_it_fails` field in
-[`models.json`](models.json), saying what it gets wrong. Worth reading first.
+Each model carries a `where_it_fails` field in [`models.json`](models.json),
+saying what it gets wrong.
 
 ## How it works
 
@@ -138,16 +127,6 @@ python inventory.py image.tif --species coffee \
 `--dedup-m` defaults to the value recommended per species in the manifest. If you
 change it, the rule of thumb is **half the smallest real spacing between plants**.
 Too large a value merges neighbours and undercounts.
-
-## Documentation
-
-- [`docs/architecture_stack.png`](docs/architecture_stack.png) — the full stack:
-  what runs on the user's machine, what stays on ours, what is still to be built
-- [`docs/data_flow.png`](docs/data_flow.png) — where the data goes, and the line
-  between what never leaves the machine and what is published
-- [`docs/UNICEF_Template2_Product_Requirements.docx`](docs/UNICEF_Template2_Product_Requirements.docx)
-  — full technical description of the solution, its measured limitations and the
-  alternatives that were tested and rejected
 
 ## Licence
 
