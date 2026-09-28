@@ -83,8 +83,7 @@ def build(orthophoto: Path, detections: Path, species: str | None, output: Path)
         encoding="utf-8",
     )
 
-    print(f"
-  {n_tiles} tiles written ({total_bytes / 1e6:.1f} MB)")
+    print(f"\n  {n_tiles} tiles written ({total_bytes / 1e6:.1f} MB)")
     print(f"  {n_det} detections")
     print(f"  output: {output}")
     return {"tiles": n_tiles, "bytes": total_bytes, "detections": n_det}
